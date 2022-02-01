@@ -38,7 +38,7 @@ SizeMax = 50000; % max size for a semented object (pixels)
 
 % ROIs
 gSize = 10; % ROIs size (pixels)
-gThresh = 0.5; % ROIs thresh (mean of Mask)
+gThresh = 0.5; % ROIs thresh (% of 1 pixels in Mask)
 
 % Orientations
 Pad1 = 15; 
@@ -103,7 +103,7 @@ while choice > 0
     parfor i=1:nGridY
         for j=1:nGridX
             temp = mean(Mask(gSize*i-(gSize-1):gSize*i,gSize*j-(gSize-1):gSize*j));
-            if mean(temp(:)) > gActiv
+            if mean(temp(:)) > gThresh
                 if i >= Pad1 && i <= nGridY-(Pad1-1) && j >= Pad1 && j <= nGridX-(Pad1-1)
                     ROIsMask(i,j) = 1;
                 end
@@ -140,18 +140,10 @@ while choice > 0
     imshow(ROIsMask,[0 1])
     title(strcat(...
         'ROIsMask (size = ',{' '},num2str(gSize),{' '},'pix. ;',...
-        {' '},'activ =',{' '},num2str(gActiv),{' '},'%)'));
+        {' '},'thresh =',{' '},num2str(gThresh),{' '},'A.U.)'));
     
-   	set(gcf,'Position',[100 100 900 900])
+   	set(gcf,'Position',[20 20 ScreenX*0.8 ScreenY*0.8])
     
-%     set(gcf,'Position',[0 0 FiberSize/2 900])
-%     title(strcat('Day#',num2str(SelectDay),' Cat#',num2str(SelectCat),' Fiber#',num2str(randFiber(i,1))))
-%     
-    
-%     tempROIsMask = imresize(ROIsMask,[nGridY*gSize nGridX*gSize],'nearest');
-%     tempDisplay = vertcat(Process, Process_tophat, uint16(Mask)*quantHigh, uint16(tempROIsMask)*quantHigh); 
-%     imshow(tempDisplay,[quantLow quantHigh]);
-
     % Dialog box %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     
     choice = questdlg('What next?', ...
