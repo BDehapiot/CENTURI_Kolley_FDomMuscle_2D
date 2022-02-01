@@ -6,47 +6,30 @@ clearvars
 %%% Multi-Engineering Platform
 %%% Aix Marseille Université
 
-%% Options
-    
-%%% Inputs %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+%% Inputs
 
 RawName = 'MAX_Trial8_D15_C1(488-TTNrb)_C2(633-MHCall)_C3(DAPI)_C4(568-Phalloidin)_100x_01_stiched';
-RootPath = 'C:\Datas\3-GitHub_BDehapiot\PatScanMuscle_2D\data';
-
-% .........................................................................
-
+RootPath = 'E:\3-GitHub_BDehapiot\PatScanMuscle_2D\data';
 pixSize = 0.0830266; % pixel size (µm)
 
-% .........................................................................
+%% Parameters 
 
-ScreenX = 2560; % screen horz. size (pixels)
-ScreenY = 1440; % screen vert. size (pixels)
+% Tophat filtering
+TophatSize = 6; % disk size for tophat filtering (pixels)
 
-%%% Parameters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+% Mask  (obtained from BGSub)
+mThresh = 100; % lower threshold for Mask (A.U.)
 
-% Tophat 
-FiltSize = 6; % disk size for tophat filtering (pixels)
+% ROIsMask (obtained from Mask)
+rSize = 10; % ROIs size for ROIsMask (pixels)
+rThresh = 0.5; % lower threshold for ROIsMask (A.U.)
+rMinSize = 100; % min size for ROIsMask's objects (pixels)
+rMaxSize = 50000; % max size for ROIsMask's objects (pixels)
 
-% .........................................................................
-
-% Mask
-Thresh = 100; % lower threshold (A.U.)
-SizeMin = 100; % min size for a segmented object (pixels)
-SizeMax = 50000; % max size for a semented object (pixels)
-
-% .........................................................................
-
-% ROIs
-gSize = 10; % ROIs size (pixels)
-gThresh = 0.5; % ROIs thresh (% of 1 pixels in Mask)
-
-% Orientations
-Pad1 = 15; 
-gPad1 = gSize+(gSize*(Pad1-1))*2;
-
-% Correlations (Pad1 must be > to Pad2)
-Pad2 = 5; 
-gPad2 = gSize+(gSize*(Pad2-1))*2;
+Pad1 = 15; % Orientations
+rPad1 = rSize+(rSize*(Pad1-1))*2;
+Pad2 = 5; % Correlations (Pad1 must be > to Pad2)
+rPad2 = rSize+(rSize*(Pad2-1))*2;
 
 % .........................................................................
 
@@ -62,48 +45,54 @@ minLoc = minLoc/pixSize; maxLoc = maxLoc/pixSize;
     
 %% Initialize
 
-% Set Paths
+% Set paths
 RawPath = strcat(RootPath,'\',RawName,'.tif');
 
-% Open Data
+% Open data
 Raw = uint16(loadtiff(RawPath,1));
 
-% Get Variable
+% Get variables
 nY = size(Raw,1);
-nX = size(Raw,2);   
-nGridY = floor(nY/gSize);
-nGridX = floor(nX/gSize);
+nX = size(Raw,2);  
+qLow = quantile(Raw,0.001,'all');
+qHigh = quantile(Raw,0.999,'all');
+tempScreen = get(0,'screensize');
+ScreenX = tempScreen(1,3);
+ScreenY = tempScreen(1,4);
 
-% Crop Raw
-Raw(nGridY*gSize+1:end,:) = [];
-Raw(:,nGridX*gSize+1:end) = [];
-nYCrop = size(Raw,1);
-nXCrop = size(Raw,2);
-
-%% Image processing & mask
+%% Create Mask & ROIsMask
 
 choice = 1;
 while choice > 0   
+
+% Process .................................................................
+
+    % Crop Raw
+    nGridY = floor(nY/rSize);
+    nGridX = floor(nX/rSize);
+    Raw(nGridY*rSize+1:end,:) = [];
+    Raw(:,nGridX*rSize+1:end) = [];
+    nYCrop = size(Raw,1);
+    nXCrop = size(Raw,2);
     
     % Substract background
-    tempBlur = imgaussfilt(Raw,20);
-    Process = Raw-tempBlur;
-    Process = imgaussfilt(Process,1);
-
+    BGSub = Raw-imgaussfilt(Raw,20); % Gaussian blur #1 
+    BGSub = imgaussfilt(BGSub,1); % Gaussian blur #2
+    
     % Tophat filtering
-    Process_tophat = imtophat(Process,strel('disk',FiltSize));
+    Tophat = imtophat(Raw,strel('disk',TophatSize));
 
-    % Make binary mask
-    Mask = Process;
-    Mask(Mask<Thresh) = 0;
-    Mask(Mask>=Thresh) = 1;
+    % Create Mask
+    Mask = BGSub;
+    Mask(Mask<mThresh) = 0;
+    Mask(Mask>=mThresh) = 1;
 
-    % Make ROIsMask
+    % Create ROIsMask
     ROIsMask = zeros(nGridY,nGridX);
     parfor i=1:nGridY
         for j=1:nGridX
-            temp = mean(Mask(gSize*i-(gSize-1):gSize*i,gSize*j-(gSize-1):gSize*j));
-            if mean(temp(:)) > gThresh
+            temp = mean(Mask(rSize*i-(rSize-1):rSize*i,rSize*j-(rSize-1):rSize*j));
+            if mean(temp(:)) > rThresh
                 if i >= Pad1 && i <= nGridY-(Pad1-1) && j >= Pad1 && j <= nGridX-(Pad1-1)
                     ROIsMask(i,j) = 1;
                 end
@@ -111,40 +100,40 @@ while choice > 0
         end
     end
 
-    % Apply size filter
+    % Apply size filter (ROIsMask)
     ROIsMask = logical(ROIsMask);
-    ROIsMask = bwareafilt(ROIsMask,[SizeMin SizeMax]);
+    ROIsMask = bwareafilt(ROIsMask,[rMinSize rMaxSize]);
     
-    % Make a display %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Display .................................................................
 
-    % 
-    quantLow = quantile(Process,0.001, 'all');
-    quantHigh = quantile(Process,0.999, 'all');
+    % BGSub
+    subplot(2,1,1) 
+    imshow(BGSub,[qLow qHigh])
+    title('BGSub')
     
-    % Plot
-    subplot(4,1,1) 
-    imshow(Process,[quantLow quantHigh])
-    title('Raw')
-    
-    subplot(4,1,2) 
-    imshow(Process_tophat,[quantLow quantHigh])
-    title(strcat(...
-        'Tophat (filt. size =',{' '},num2str(FiltSize),{' '},'pix.)'));
-    
-    subplot(4,1,3) 
+    % Tophat
+    subplot(2,2,1) 
+    imshow(Tophat,[qLow qHigh])
+    title('Tophat')
+
+    % Mask
+    subplot(2,1,2) 
     imshow(Mask,[0 1])
     title(strcat(...
-        'Mask (thresh. =',{' '},num2str(Thresh),{' '},'A.U.)'));
+        'Mask (thresh. =',{' '},num2str(mThresh),')'));
     
-    subplot(4,1,4) 
+    % ROIsMask
+    subplot(2,2,2) 
     imshow(ROIsMask,[0 1])
     title(strcat(...
-        'ROIsMask (size = ',{' '},num2str(gSize),{' '},'pix. ;',...
-        {' '},'thresh =',{' '},num2str(gThresh),{' '},'A.U.)'));
+        'ROIsMask (size = ',{' '},num2str(rSize),{' '},'pix. ;',...
+        {' '},'thresh =',{' '},num2str(rThresh),{' '},';',...
+        {' '},'min size =',{' '},num2str(rMinSize),{' '},'pix. ;',...
+        {' '},'max size =',{' '},num2str(rMaxSize),{' '},'pix.)'));
     
    	set(gcf,'Position',[20 20 ScreenX*0.8 ScreenY*0.8])
     
-    % Dialog box %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Dialog box ..............................................................
     
     choice = questdlg('What next?', ...
         'Menu', ...
@@ -157,11 +146,89 @@ while choice > 0
     end
 
     if choice == 1
-        prompt = {'FiltSize :','Thresh :','SizeMin :','SizeMax :'};
+
+        prompt = {
+            'Mask thresh. :',...
+            'ROIs size :',...
+            'ROIs thresh. :',...
+            'ROIs min. size :',...
+            'ROIs max. size :'
+            };
+
+        definput = {
+            num2str(mThresh),...
+            num2str(rSize),....
+            num2str(rThresh),...
+            num2str(rMinSize),...
+            num2str(rMaxSize)
+            };
+        
         dlgtitle = 'Input'; dims = 1;
-        definput = {num2str(FiltSize),num2str(Thresh),num2str(SizeMin),num2str(SizeMax)};
         answer = str2double(inputdlg(prompt,dlgtitle,dims,definput));
-        FiltSize = answer(1,1); Thresh = answer(2,1); SizeMin = answer(3,1); SizeMax = answer(4,1);
+        
+        mThresh = answer(1,1); 
+        rSize = answer(2,1); 
+        rThresh = answer(3,1); 
+        rMinSize = answer(4,1); 
+        rMaxSize = answer(5,1);
+        
+        close
+    end
+
+    if choice == 0
+        
+        close
+    end
+    
+end
+
+%% Tophat filtering
+
+choice = 1;
+while choice > 0   
+
+% Process .................................................................    
+    
+    % Tophat filtering
+    Tophat = imtophat(Raw,strel('disk',TophatSize));
+    
+% Display .................................................................
+
+    % Raw
+    subplot(2,1,1) 
+    imshow(Raw,[qLow qHigh])
+    title('Raw')
+
+    % Process
+    subplot(2,1,2) 
+    imshow(Tophat,[qLow qHigh])
+    title(strcat(...
+        'Tophat (size =',{' '},num2str(TophatSize),{' '},'pix.)'));
+    
+   	set(gcf,'Position',[20 20 ScreenX*0.8 ScreenY*0.8])
+    
+% Dialog box ..............................................................
+    
+    choice = questdlg('What next?', ...
+        'Menu', ...
+        'Modify Parameters','Proceed','Proceed');
+    switch choice
+        case 'Modify Parameters'
+            choice = 1;
+        case 'Proceed'
+            choice = 0;
+    end
+
+    if choice == 1
+        
+        prompt = {'Tophat size :'};
+        
+        definput = {num2str(TophatSize)};
+        
+        dlgtitle = 'Input'; dims = 1;
+        answer = str2double(inputdlg(prompt,dlgtitle,dims,definput));
+        
+        TophatSize = answer(1,1);
         
         close
     end
@@ -174,6 +241,20 @@ while choice > 0
 end
 
 %% Determine local orientation
+
+    
+%     % Substract background
+%     tempBlur = imgaussfilt(Raw,20);
+%     Process = Raw-tempBlur;
+%     Process = imgaussfilt(Process,1);
+% 
+%     % Tophat filtering
+%     Process_tophat = imtophat(Process,strel('disk',FiltSize));
+
+%     subplot(4,1,2) 
+%     imshow(Process_tophat,[quantLow quantHigh])
+%     title(strcat(...
+%         'Tophat (filt. size =',{' '},num2str(FiltSize),{' '},'pix.)'));
 
 % choice = 1;
 % while choice > 0   
