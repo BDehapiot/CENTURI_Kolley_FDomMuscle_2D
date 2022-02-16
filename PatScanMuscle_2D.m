@@ -8,7 +8,7 @@ clearvars
 
 %% Inputs
 
-RawName = 'MAX_Trial8_D09_C1(488-TTNrb)_C2(633-MHCall)_C3(DAPI)_C4(568-Phalloidin)_100x_01_stiched_lite';
+RawName = 'MAX_Trial8_D12_C1(488-TTNrb)_C2(633-MHCall)_C3(DAPI)_C4(568-Phalloidin)_100x_01_stiched_med';
 RootPath = 'C:\Datas\3-GitHub_BDehapiot\PatScanMuscle_2D\data';
 pixSize = 0.0830266; % pixel size (µm)
 nChannel = 1; % select channel to process
@@ -35,12 +35,9 @@ rPad2 = rSize+(rSize*(Pad2-1))*2;
 % Steerable Filter
 sfOrder = 2; sfSigma = 3;
 
-% .........................................................................
-
 % Valid peaks
 minProm = 0.10; % min prominence for pattern recognition
-minLoc = 0.5; maxLoc = 4; % min/max size for pattern recognition (µm)
-minLoc = minLoc/pixSize; maxLoc = maxLoc/pixSize;
+minLoc = 0; maxLoc = 100; % min/max size for pattern recognition (µm)
     
 %% Initialize
 
@@ -57,9 +54,6 @@ nY = size(Raw,1);
 nX = size(Raw,2);  
 qLow = quantile(Raw,0.001,'all');
 qHigh = quantile(Raw,0.999,'all');
-tempScreen = get(0,'screensize');
-ScreenX = tempScreen(1,3);
-ScreenY = tempScreen(1,4);
 
 %% Mask & ROIsMask
 
@@ -124,7 +118,7 @@ while choice > 0
         {' '},'min size =',{' '},num2str(rMinSize),{' '},'pix. ;',...
         {' '},'max size =',{' '},num2str(rMaxSize),{' '},'pix.)'));
     
-   	set(gcf,'Position',[20 20 ScreenX*0.8 ScreenY*0.8])
+    set(gcf, 'Units', 'Normalized', 'OuterPosition', [0 0 1 1]);
     
 % Dialog box ..............................................................
     
@@ -198,7 +192,7 @@ while choice > 0
     title(strcat(...
         'Tophat (size =',{' '},num2str(TophatSize),{' '},'pix.)'));
     
-   	set(gcf,'Position',[20 20 ScreenX*0.8 ScreenY*0.8])
+    set(gcf, 'Units', 'Normalized', 'OuterPosition', [0 0 1 1]);
     
 % Dialog box ..............................................................
     
@@ -288,7 +282,7 @@ while choice > 0
     colormap(gca, jet(256));
     colorbar(gca);
 
-    set(gcf,'Position',[20 20 ScreenX*0.8 ScreenY*0.8])
+    set(gcf, 'Units', 'Normalized', 'OuterPosition', [0 0 1 1]);
    
 % Dialog box ..............................................................
     
@@ -305,20 +299,17 @@ while choice > 0
     if choice == 1
 
         prompt = {
-            'sfSigma :',...
-            'Pad1 :'
+            'Sigma :'
             };
 
         definput = {
-            num2str(sfSigma),...
-            num2str(Pad1)
+            num2str(sfSigma)
             };
         
         dlgtitle = 'Input'; dims = 1;
         answer = str2double(inputdlg(prompt,dlgtitle,dims,definput));
         
         sfSigma = answer(1,1); 
-        Pad1 = answer(2,1); 
         
         close
     end
@@ -356,10 +347,12 @@ parfor i=1:nGridY
 
             % Find Peaks
             [pks,locs,width,prom] = findpeaks(Corr2D_AvgX,'MinPeakDistance',6);
-            tempi = i; tempi = repmat(tempi,size(pks,1),1);
-            tempj = j; tempj = repmat(tempj,size(pks,1),1);
-            tempzeros = 0; tempzeros = repmat(tempzeros,size(pks,1),1);
-            PeaksInfo = horzcat(tempi,tempj,pks,locs*pixSize,width,prom,tempzeros);
+            if ~isempty(pks)
+                [~,idx] = max(prom); % Get idx for the most prominent peak
+                PeaksInfo = horzcat(i,j,pks(idx,1),locs(idx,1)*pixSize,width(idx,1),prom(idx,1));
+            else
+                PeaksInfo = NaN(1,6); % NaN if no peak found
+            end
 
             % Append MergedData
             MergedData{i,j}{1,1} = Angle;
@@ -373,106 +366,158 @@ end
 
 %% Get results
 
-% Merge "All" data
-All_PeaksInfo = NaN(0,0);
-All_Corr2D_AvgX = NaN(0,0);
-PromMap = zeros(nGridY,nGridX);
-LocMap = zeros(nGridY,nGridX);
-for i=1:nGridY
-    for j=1:nGridX
-        if ROIsMask(i,j) == 1
-            All_PeaksInfo = vertcat(All_PeaksInfo,MergedData{i,j}{4,1});
-            All_Corr2D_AvgX(:,end+1) = MergedData{i,j}{3,1};
-            PromMap(i,j) = MergedData{i,j}{4,1}(1,6);
-            LocMap(i,j) = MergedData{i,j}{4,1}(1,4);
+choice = 1;
+while choice > 0   
+
+% Process .................................................................
+
+    % Merge "All" data
+    All_PeaksInfo = NaN(0,0);
+    All_Corr2D_AvgX = NaN(0,0);
+    PromMap = zeros(nGridY,nGridX);
+    for i=1:nGridY
+        for j=1:nGridX
+            if ROIsMask(i,j) == 1
+                All_PeaksInfo = vertcat(All_PeaksInfo,MergedData{i,j}{4,1});
+                All_Corr2D_AvgX(:,end+1) = MergedData{i,j}{3,1};
+                PromMap(i,j) = MergedData{i,j}{4,1}(1,6);
+            end
         end
     end
+
+    % Get "Valid" data          
+    Valid_PeaksInfo = NaN(0,0);
+    Valid_Corr2D_AvgX = NaN(0,0);
+    ValidMap = zeros(nGridY,nGridX);
+    for i=1:size(All_PeaksInfo,1)
+        tempY = All_PeaksInfo(i,1);
+        tempX = All_PeaksInfo(i,2);
+        tempProm = All_PeaksInfo(i,6);
+        tempLoc = All_PeaksInfo(i,4);
+        if tempProm >= minProm
+            if tempLoc >= minLoc && tempLoc <= maxLoc
+                Valid_PeaksInfo(end+1,:) = All_PeaksInfo(i,:);
+                Valid_Corr2D_AvgX(:,end+1) = All_Corr2D_AvgX(:,i);
+                ValidMap(tempY,tempX) = 1;
+            end
+        end
+    end
+
+    % Get Avg Corr2D_AvgX
+    Avg_Corr2D_AvgX(:,1) = (0:rPad2-1)*pixSize; % distance (µm)
+    Avg_Corr2D_AvgX(:,2) = mean(All_Corr2D_AvgX,2); % All 
+    Avg_Corr2D_AvgX(:,3) = std(All_Corr2D_AvgX,0,2); % All S.D.
+    if ~isempty(Valid_Corr2D_AvgX)
+        Avg_Corr2D_AvgX(:,4) = mean(Valid_Corr2D_AvgX,2); % Valid
+        Avg_Corr2D_AvgX(:,5) = std(Valid_Corr2D_AvgX,0,2); % Valid S.D.
+    end
+    
+% Display .................................................................
+
+    % Raw
+    subplot(3,3,1:3)
+    tempRaw = Raw;
+    tempValidMap = imresize(ValidMap,[nYCrop nXCrop],'nearest');
+    tempValidMap = bwmorph(logical(tempValidMap),'remove');
+    tempValidMap = bwmorph(tempValidMap,'dilate');
+    tempRaw(tempValidMap==1) = max(Raw(:));
+    imshow(tempRaw,[qLow qHigh])
+	title(strcat(...
+        'ValidMap (minProm =',{' '},num2str(minProm),{' '},';',...
+        {' '},'minLoc =',{' '},num2str(minLoc),{' '},';',...
+        {' '},'maxLoc =',{' '},num2str(maxLoc),{' '},')'));
+
+    % PromMap
+    subplot(3,3,4:6)
+    imshow(imresize(PromMap,[nYCrop nXCrop],'nearest'),[min(PromMap(:)) max(PromMap(:))])
+    title('PromMap')
+    colormap(gca, jet(256));
+    colorbar(gca);
+
+    % Avg_Corr2D_AvgX (All & Valid)
+    subplot(3,3,7)
+    plot(Avg_Corr2D_AvgX(:,1), Avg_Corr2D_AvgX(:,2))
+    hold on
+    plot(Avg_Corr2D_AvgX(:,1), Avg_Corr2D_AvgX(:,4))
+    xlabel('Distance (µm)') 
+    ylabel('Correlation')
+    legend('All','Valid')
+    xlim([0 ceil(max(Avg_Corr2D_AvgX(:,1)))])
+    pbaspect([1 1 1])
+    title('Avg. Corr2D')
+
+    % Locs distribution ('All') 
+    subplot(3,3,8)
+    histogram(All_PeaksInfo(:,4),50)
+    xlabel('Distance (µm)') 
+    ylabel('Number of peaks')
+    xlim([0 ceil(max(Avg_Corr2D_AvgX(:,1)))])
+    pbaspect([1 1 1])
+    title('Main peak localization (All)')
+
+    % Locs distribution ('Valid')  
+    subplot(3,3,9)
+    histogram(Valid_PeaksInfo(:,4),50)
+    xlabel('Distance (µm)') 
+    ylabel('Number of peaks')
+    xlim([0 ceil(max(Avg_Corr2D_AvgX(:,1)))])
+    pbaspect([1 1 1])
+    title('Main peak localization (Valid)')
+
+    set(gcf, 'Units', 'Normalized', 'OuterPosition', [0 0 1 1]);
+    
+% Dialog box ..............................................................
+    
+    choice = questdlg('What next?', ...
+        'Menu', ...
+        'Modify Parameters','Proceed','Proceed');
+    switch choice
+        case 'Modify Parameters'
+            choice = 1;
+        case 'Proceed'
+            choice = 0;
+    end
+
+    if choice == 1
+
+        prompt = {
+            'minProm :',...
+            'minLoc :',...
+            'maxLoc :'
+            };
+
+        definput = {
+            num2str(minProm),...
+            num2str(minLoc),....
+            num2str(maxLoc)
+            };
+        
+        dlgtitle = 'Input'; dims = 1;
+        answer = str2double(inputdlg(prompt,dlgtitle,dims,definput));
+        
+        minProm = answer(1,1); 
+        minLoc = answer(2,1); 
+        maxLoc = answer(3,1); 
+        
+        close
+    end
+
+    if choice == 0
+        
+        close
+    end
+    
 end
 
-% Format outputs tables
+%% Format and save
+
+% Clear vars ..............................................................
+
+% Format outputs ..........................................................
+
 All_PeaksInfo = array2table(All_PeaksInfo,'VariableNames',...
     {'GridY','GridX','pks','loc','width','prom','valid'});
-
-
-% AvgAllCorr2DAvgX = mean(All_Corr2D_AvgX,2);
-% Avg_Corr2D_AvgX(:,1) = (0:rPad2-1)*pixSize;
-% Avg_Corr2D_AvgX(:,2) = mean(All_Corr2D_AvgX,2);
-% PeaksInfo(:,4) = PeaksInfo(:,4)*pixSize;
-
-
-
-% for k=1:size(PeaksInfo,1)
-%     if PeaksInfo(k,6) >= minProm && PeaksInfo(k,4) >= minLoc && PeaksInfo(k,4) <= maxLoc
-%         PeaksInfo(k,7) = 1;
-%     end
-% end
-% idx = find(PeaksInfo(:,7)==1);
-% ValidPeaksInfo = PeaksInfo(idx,:);
-% 
-% MergedData{i,j}{5,1} = ValidPeaksInfo; 
-
-%%
-
-% % Merge "All" data
-% AllPeaksInfo = NaN(0,0);
-% AllCorr2DAvgX = NaN(0,0);
-% AvgCorr2DAvgX(:,1) = (0:rPad2-1)*pixSize;
-% promMap = zeros(nGridY,nGridX);
-% locMap = zeros(nGridY,nGridX);
-% for i=1:nGridY
-%     for j=1:nGridX
-%         if ROIsMask(i,j) == 1
-%             tempAllPeaksInfo = MergedData{i,j}{4,1};
-%             AllPeaksInfo = vertcat(AllPeaksInfo,tempAllPeaksInfo);
-%             AllCorr2DAvgX(:,end+1) = MergedData{i,j}{3,1};
-%             promMap(i,j) = MergedData{i,j}{4,1}(1,6);
-%             locMap(i,j) = MergedData{i,j}{4,1}(1,4);
-%         end
-%     end
-% end
-% AvgAllCorr2DAvgX = mean(AllCorr2DAvgX,2);
-% AvgCorr2DAvgX(:,2) = mean(AllCorr2DAvgX,2);
-% AllPeaksInfo(:,4) = AllPeaksInfo(:,4)*pixSize;
-% 
-% % Merge "Valid" data
-% ValidPeaksInfo = NaN(0,0);
-% ValidCorr2DAvgX = NaN(0,0);
-% ValidMap = zeros(nGridY,nGridX);
-% for i=1:nGridY
-%     for j=1:nGridX
-%         if ROIsMask(i,j) == 1
-%             tempValidPeaksInfo = MergedData{i,j}{5,1};
-%             ValidPeaksInfo = vertcat(ValidPeaksInfo,tempValidPeaksInfo);
-%             if ~isempty(MergedData{i,j}{5,1})
-%                 ValidCorr2DAvgX(:,end+1) = MergedData{i,j}{3,1};
-%                 ValidMap(i,j) = 1;
-%             end
-%         end
-%     end
-% end 
-% AvgValidCorr2DAvgX = mean(ValidCorr2DAvgX,2);
-% AvgCorr2DAvgX(:,3) = mean(ValidCorr2DAvgX,2);
-% ValidPeaksInfo(:,4) = ValidPeaksInfo(:,4)*pixSize;
-% 
-% % Display .................................................................
-% 
-% ValidMapRSize = imresize(ValidMap,[nYCrop nXCrop],'nearest');
-% 
-% 
-% 
-% % MIJ Paths
-% javaaddpath 'C:\Program Files\Polyspace\R2019a\java\mij.jar'.
-% javaaddpath 'C:\Program Files\Polyspace\R2019a\java\ij.jar'
-% 
-% ROIsMask = uint8(ROIsMask)*255;
-% ValidMap = uint8(ValidMap)*255;
-% MIJ.start('C:\Program Files\ImageJ_1.47v\plugins');
-% MIJ.createImage('ROIsMask',ROIsMask,true); 
-% MIJ.createImage('ValidMap',ValidMap,true); 
-% MIJ.createImage('AngleMap',AngleMap,true);
-% 
-% ValidMapRSize = imresize(ValidMap,[nYCrop nXCrop],'nearest');
-% MIJ.createImage('Tophat',Tophat,true); MIJ.run('8-bit');
-% MIJ.createImage('ValidMapRSize',ValidMapRSize,true); 
-% MIJ.run('Outline'); MIJ.run('Options...', 'iterations=1 count=1 black do=Dilate');
-% MIJ.run('Merge Channels...', 'c1=ValidMapRSize c4=Tophat create');
+Valid_PeaksInfo = array2table(Valid_PeaksInfo,'VariableNames',...
+    {'GridY','GridX','pks','loc','width','prom','valid'});
+Avg_Corr2D_AvgX = array2table(Avg_Corr2D_AvgX,'VariableNames',...
+    {'µm','All','Valid','AllSD','ValidSD'});
