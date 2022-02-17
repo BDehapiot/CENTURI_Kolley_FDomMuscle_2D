@@ -8,7 +8,7 @@ clearvars
 
 %% Inputs
 
-RawName = 'MAX_Trial8_D07_C1(488-TTNrb)_C2(633-MHCall)_C3(DAPI)_C4(568-Phalloidin)_100x_01_stiched_lite';
+RawName = '29H_IFM_Nano2SLS647_MHC488_Actin561_63x_3,4x_Zstack3-1_z9';
 RootPath = 'C:\Datas\3-GitHub_BDehapiot\PatScanMuscle_2D\data';
 pixSize = 0.0830266; % pixel size (µm)
 nChannel = 1; % select channel to process
@@ -16,7 +16,7 @@ nChannel = 1; % select channel to process
 %% Parameters 
 
 % Mask  (obtained from BGSub)
-Mask_Thresh = 125; % lower threshold for Mask (A.U.)
+Mask_Thresh = 15; % 125; % lower threshold for Mask (A.U.)
 
 % ROIsMask (obtained from Mask)
 ROI_Size = 10; % ROIs size for ROIsMask (pixels)
@@ -25,16 +25,15 @@ ROI_MinSize = 100; % min size for ROIsMask's objects (pixels)
 ROI_MaxSize = 50000; % max size for ROIsMask's objects (pixels)
 
 % Tophat filtering
-Tophat_Size = 6; % disk size for tophat filtering (pixels)
+Tophat_Size = 100; % 6; % disk size for tophat filtering (pixels)
 
 % Steerable Filter
-Steerable_Order = 2; Steerable_Sigma = 2;
+Steerable_Order = 2; Steerable_Sigma = 1;
 
 % Padding
-Pad1 = 8; % Orientations
-ROI_Pad1 = ROI_Size+(ROI_Size*(Pad1-1))*2;
-Pad2 = 4; % Correlations (Pad1 must be > to Pad2)
-ROI_Pad2 = ROI_Size+(ROI_Size*(Pad2-1))*2;
+Pad_Angle = 10; % Window size for angle measurement (nROIs)
+Pad_Corr = 5; % Window size for 2D corr. measurement (nROIs)
+ROI_Pad_Corr = (ROI_Size+(ROI_Size*(Pad_Corr-1))*2);
 
 % Valid peaks
 min_Prom = 0.10; % min prominence for pattern recognition
@@ -47,7 +46,8 @@ RawPath = strcat(RootPath,'\',RawName,'.tif');
 
 % Open Data
 info = imfinfo(RawPath);
-Raw = uint16(imread(RawPath,nChannel,'Info',info));
+% Raw = uint16(imread(RawPath,nChannel,'Info',info));
+Raw = imread(RawPath,nChannel,'Info',info);
 clear info
 
 % Get variables
@@ -70,7 +70,7 @@ while choice > 0
     Raw(:,nGridX*ROI_Size+1:end) = [];
     nYCrop = size(Raw,1);
     nXCrop = size(Raw,2);
-    
+       
     % Substract background
     Raw_BGSub = Raw-imgaussfilt(Raw,20); % Gaussian blur #1 
     Raw_BGSub = imgaussfilt(Raw_BGSub,1); % Gaussian blur #2
@@ -86,7 +86,7 @@ while choice > 0
         for j=1:nGridX
             temp = mean(Raw_Mask(ROI_Size*i-(ROI_Size-1):ROI_Size*i,ROI_Size*j-(ROI_Size-1):ROI_Size*j));
             if mean(temp(:)) > ROI_Thresh
-                if i >= Pad1 && i <= nGridY-(Pad1-1) && j >= Pad1 && j <= nGridX-(Pad1-1)
+                if i >= Pad_Angle && i <= nGridY-(Pad_Angle-1) && j >= Pad_Angle && j <= nGridX-(Pad_Angle-1)
                     Raw_ROIsMask(i,j) = 1;
                 end
             end
@@ -97,12 +97,15 @@ while choice > 0
     Raw_ROIsMask = logical(Raw_ROIsMask);
     Raw_ROIsMask = bwareafilt(Raw_ROIsMask,[ROI_MinSize ROI_MaxSize]);
     
+    % Update ROI_Pad_Corr
+    ROI_Pad_Corr = (ROI_Size+(ROI_Size*(Pad_Corr-1))*2);
+    
 % Display .................................................................
 
     % BGSub
     subplot(3,1,1) 
-    imshow(Raw_BGSub,[qLow qHigh])
-    title('BGSub')
+    imshow(Raw,[qLow qHigh])
+    title('Raw')
 
     % Mask
     subplot(3,1,2) 
@@ -250,7 +253,7 @@ while choice > 0
     parfor i=1:nGridY
         for j=1:nGridX
             if Raw_ROIsMask(i,j) == 1            
-                Crop = rot(i-(Pad1-1):i+(Pad1-1),j-(Pad1-1):j+(Pad1-1),:);
+                Crop = rot(i-(Pad_Angle-1):i+(Pad_Angle-1),j-(Pad_Angle-1):j+(Pad_Angle-1),:);
                 tempMax = NaN(size(Crop,3),1);
                 for k=1:size(Crop,3)
                     temp = Crop(:,:,k);
@@ -309,7 +312,7 @@ while choice > 0
         dlgtitle = 'Input'; dims = 1;
         answer = str2double(inputdlg(prompt,dlgtitle,dims,definput));
         
-        sfSigma = answer(1,1); 
+        Steerable_Sigma = answer(1,1); 
         
         close
     end
@@ -324,27 +327,31 @@ end
 %% 2D cross-correlation & findpeaks
 
 MergedData = cell(nGridY,nGridX);
-parfor i=1:nGridY
-    for j=1:nGridX
+for i=10%1:nGridY
+    for j=41%1:nGridX
         
         if Raw_ROIsMask(i,j) == 1  
 
             % Crop Data
             Angle = AngleMap(i,j);
-            Crop = Raw_Tophat(ROI_Size*i-((ROI_Size*Pad2)-1):ROI_Size*i+(ROI_Size*(Pad2-1)),ROI_Size*j-((ROI_Size*Pad2)-1):ROI_Size*j+(ROI_Size*(Pad2-1)));
-
+            Crop = Raw_Tophat(...
+                ROI_Size*i-((ROI_Size*Pad_Corr)-1):...
+                ROI_Size*i+(ROI_Size*(Pad_Corr-1)),...
+                ROI_Size*j-((ROI_Size*Pad_Corr)-1):...
+                ROI_Size*j+(ROI_Size*(Pad_Corr-1)));
+            
             % Determine 2D Correlation
-            Corr2D = normxcorr2(Crop,Crop);
+            Corr2D = normxcorr2(Crop,Crop); % compute 2D corr.
             Corr2D_Rot = double(imrotate(Corr2D,(90-Angle)*-1)); % rotate image acc. to angle 
-            temp = max(Corr2D_Rot,[],2); [~,tempMid] = max(temp); % find max corr #1
+            temp = max(Corr2D_Rot,[],2); [~,tempMid] = max(temp); % find max corr #1            
             temp_AvgX = (nanmean(Corr2D_Rot(tempMid-2:tempMid+2,:),1))'; % average value on x axis
             temp = max(temp_AvgX,[],2); [~,tempMid] = max(temp); % find max corr #2 
             temp_AvgX = temp_AvgX/max(temp_AvgX); % max normalization
-            temp_AvgX1 = temp_AvgX(tempMid:tempMid+ROI_Pad2-1);
-            temp_AvgX2 = flip(temp_AvgX(tempMid-ROI_Pad2+1:tempMid));                
+            temp_AvgX1 = temp_AvgX(tempMid:tempMid+ROI_Pad_Corr-1);
+            temp_AvgX2 = flip(temp_AvgX(tempMid-ROI_Pad_Corr+1:tempMid));                
             Corr2D_AvgX = horzcat(temp_AvgX1,temp_AvgX2);
             Corr2D_AvgX = mean(Corr2D_AvgX,2);
-
+            
             % Find Peaks
             [pks,locs,width,prom] = findpeaks(Corr2D_AvgX,'MinPeakDistance',6);
             if ~isempty(pks)
@@ -404,7 +411,7 @@ while choice == 2
     end
 
     % Get Avg Corr2D_AvgX
-    Corr2D_AvgX_Avg(:,1) = (0:ROI_Pad2-1)*pixSize; % distance (µm)
+    Corr2D_AvgX_Avg(:,1) = (0:ROI_Pad_Corr-1)*pixSize; % distance (µm)
     Corr2D_AvgX_Avg(:,2) = mean(Corr2D_AvgX_All,2); % All 
     Corr2D_AvgX_Avg(:,3) = std(Corr2D_AvgX_All,0,2); % All S.D.
     if ~isempty(Corr2D_AvgX_Valid)
@@ -521,7 +528,7 @@ Parameters = vertcat(...
     ROI_Size,ROI_Thresh,ROI_MinSize,ROI_MaxSize,...
     Tophat_Size,...
     Steerable_Order,Steerable_Sigma,...
-    Pad1, ROI_Pad1, Pad2, ROI_Pad2,...
+    Pad_Angle, ROI_Pad1, Pad_Corr, ROI_Pad_Corr,...
     min_Prom, min_Loc, max_Loc);
 
 Parameters = array2table(Parameters,'RowNames',...
