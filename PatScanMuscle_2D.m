@@ -8,15 +8,16 @@ clearvars
 
 %% Inputs
 
-RawName = '29H_IFM_Nano2SLS647_MHC488_Actin561_63x_3,4x_Zstack3-1_z9';
+RawName = '29H_IFM_Nano2SLS647_MHC488_Actin561_63x_3,4x_Zstack3-1_z9_RSize';
 RootPath = 'C:\Datas\3-GitHub_BDehapiot\PatScanMuscle_2D\data';
 pixSize = 0.0830266; % pixel size (µm)
-nChannel = 1; % select channel to process
+% pixSize = 0.0276060; % pixel size (µm)
+nChannel = 3; % select channel to process
 
 %% Parameters 
 
 % Mask  (obtained from BGSub)
-Mask_Thresh = 15; % 125; % lower threshold for Mask (A.U.)
+Mask_Thresh = 125; % lower threshold for Mask (A.U.)
 
 % ROIsMask (obtained from Mask)
 ROI_Size = 10; % ROIs size for ROIsMask (pixels)
@@ -25,10 +26,10 @@ ROI_MinSize = 100; % min size for ROIsMask's objects (pixels)
 ROI_MaxSize = 50000; % max size for ROIsMask's objects (pixels)
 
 % Tophat filtering
-Tophat_Size = 100; % 6; % disk size for tophat filtering (pixels)
+Tophat_Size = 6; % disk size for tophat filtering (pixels)
 
 % Steerable Filter
-Steerable_Order = 2; Steerable_Sigma = 1;
+Steerable_Order = 2; Steerable_Sigma = 2;
 
 % Padding
 Pad_Angle = 10; % Window size for angle measurement (nROIs)
@@ -254,12 +255,12 @@ while choice > 0
         for j=1:nGridX
             if Raw_ROIsMask(i,j) == 1            
                 Crop = rot(i-(Pad_Angle-1):i+(Pad_Angle-1),j-(Pad_Angle-1):j+(Pad_Angle-1),:);
-                tempMax = NaN(size(Crop,3),1);
+                idxMax = NaN(size(Crop,3),1);
                 for k=1:size(Crop,3)
                     temp = Crop(:,:,k);
-                    tempMax(k,1) = nanmean(temp(:));
+                    idxMax(k,1) = nanmean(temp(:));
                 end
-                [M,I] = max(tempMax);
+                [M,I] = max(idxMax);
                 AngleMap(i,j) = I;            
             end
         end
@@ -327,8 +328,8 @@ end
 %% 2D cross-correlation & findpeaks
 
 MergedData = cell(nGridY,nGridX);
-for i=10%1:nGridY
-    for j=41%1:nGridX
+parfor i=1:nGridY
+    for j=1:nGridX
         
         if Raw_ROIsMask(i,j) == 1  
 
@@ -339,21 +340,33 @@ for i=10%1:nGridY
                 ROI_Size*i+(ROI_Size*(Pad_Corr-1)),...
                 ROI_Size*j-((ROI_Size*Pad_Corr)-1):...
                 ROI_Size*j+(ROI_Size*(Pad_Corr-1)));
+
+            % Compute Corr2D
+            Corr2D = normxcorr2(Crop,Crop); 
+
+            % Rotate Corr2D according to "Angle" 
+            Corr2D_Rot = double(imrotate(Corr2D,(90-Angle)*-1,'bilinear')); 
+
+            % Average value on x axis 
+            Corr2D_Rot_AvgX = nanmean(Corr2D_Rot(...
+                round(size(Corr2D_Rot,1)/2)-10:round(size(Corr2D_Rot,1)/2)+10,:),1)'; 
+
+            % Find max correlation 
+            Max = max(Corr2D_Rot_AvgX(...
+                round(size(Corr2D_Rot,1)/2)-10:round(size(Corr2D_Rot,1)/2)+10));
+            idxMax = find(Corr2D_Rot_AvgX==Max);
             
-            % Determine 2D Correlation
-            Corr2D = normxcorr2(Crop,Crop); % compute 2D corr.
-            Corr2D_Rot = double(imrotate(Corr2D,(90-Angle)*-1)); % rotate image acc. to angle 
-            temp = max(Corr2D_Rot,[],2); [~,tempMid] = max(temp); % find max corr #1            
-            temp_AvgX = (nanmean(Corr2D_Rot(tempMid-2:tempMid+2,:),1))'; % average value on x axis
-            temp = max(temp_AvgX,[],2); [~,tempMid] = max(temp); % find max corr #2 
-            temp_AvgX = temp_AvgX/max(temp_AvgX); % max normalization
-            temp_AvgX1 = temp_AvgX(tempMid:tempMid+ROI_Pad_Corr-1);
-            temp_AvgX2 = flip(temp_AvgX(tempMid-ROI_Pad_Corr+1:tempMid));                
-            Corr2D_AvgX = horzcat(temp_AvgX1,temp_AvgX2);
-            Corr2D_AvgX = mean(Corr2D_AvgX,2);
+            % Max normalization
+            Corr2D_Rot_AvgX = Corr2D_Rot_AvgX/Max;
+
+            % Get "one-sided" correlation profile
+            rProfile = Corr2D_Rot_AvgX(idxMax:idxMax+ROI_Pad_Corr-1); % right corr. profile
+            lProfile = flip(Corr2D_Rot_AvgX(idxMax-ROI_Pad_Corr+1:idxMax)); % left corr. profile              
+            mProfile = horzcat(rProfile,lProfile); % merged corr. profile  
+            CorrProfile = mean(mProfile,2); 
             
             % Find Peaks
-            [pks,locs,width,prom] = findpeaks(Corr2D_AvgX,'MinPeakDistance',6);
+            [pks,locs,width,prom] = findpeaks(CorrProfile,'MinPeakDistance',6);
             if ~isempty(pks)
                 [~,idx] = max(prom); % Get idx for the most prominent peak
                 PeaksInfo = horzcat(i,j,pks(idx,1),locs(idx,1)*pixSize,width(idx,1),prom(idx,1));
@@ -364,7 +377,7 @@ for i=10%1:nGridY
             % Append MergedData
             MergedData{i,j}{1,1} = Angle;
             MergedData{i,j}{2,1} = Crop;
-            MergedData{i,j}{3,1} = Corr2D_AvgX; 
+            MergedData{i,j}{3,1} = CorrProfile; 
             MergedData{i,j}{4,1} = PeaksInfo; 
             
         end
@@ -380,13 +393,13 @@ while choice == 2
 
     % Merge "All" data
     PeaksInfo_All = NaN(0,0);
-    Corr2D_AvgX_All = NaN(0,0);
+    CorrProfile_All = NaN(0,0);
     Map_Prom = zeros(nGridY,nGridX);
     for i=1:nGridY
         for j=1:nGridX
             if Raw_ROIsMask(i,j) == 1
                 PeaksInfo_All = vertcat(PeaksInfo_All,MergedData{i,j}{4,1});
-                Corr2D_AvgX_All(:,end+1) = MergedData{i,j}{3,1};
+                CorrProfile_All(:,end+1) = MergedData{i,j}{3,1};
                 Map_Prom(i,j) = MergedData{i,j}{4,1}(1,6);
             end
         end
@@ -394,7 +407,7 @@ while choice == 2
 
     % Get "Valid" data          
     PeaksInfo_Valid = NaN(0,0);
-    Corr2D_AvgX_Valid = NaN(0,0);
+    CorrProfile_Valid = NaN(0,0);
     Map_Valid = zeros(nGridY,nGridX);
     for i=1:size(PeaksInfo_All,1)
         tempY = PeaksInfo_All(i,1);
@@ -404,19 +417,22 @@ while choice == 2
         if tempProm >= min_Prom
             if tempLoc >= min_Loc && tempLoc <= max_Loc
                 PeaksInfo_Valid(end+1,:) = PeaksInfo_All(i,:);
-                Corr2D_AvgX_Valid(:,end+1) = Corr2D_AvgX_All(:,i);
+                CorrProfile_Valid(:,end+1) = CorrProfile_All(:,i);
                 Map_Valid(tempY,tempX) = 1;
             end
         end
     end
 
-    % Get Avg Corr2D_AvgX
-    Corr2D_AvgX_Avg(:,1) = (0:ROI_Pad_Corr-1)*pixSize; % distance (µm)
-    Corr2D_AvgX_Avg(:,2) = mean(Corr2D_AvgX_All,2); % All 
-    Corr2D_AvgX_Avg(:,3) = std(Corr2D_AvgX_All,0,2); % All S.D.
-    if ~isempty(Corr2D_AvgX_Valid)
-        Corr2D_AvgX_Avg(:,4) = mean(Corr2D_AvgX_Valid,2); % Valid
-        Corr2D_AvgX_Avg(:,5) = std(Corr2D_AvgX_Valid,0,2); % Valid S.D.
+    % Get Avg CorrProfile
+    CorrProfile_Avg(:,1) = (0:ROI_Pad_Corr-1)*pixSize; % distance (µm)
+    CorrProfile_Avg(:,2) = mean(CorrProfile_All,2); % All 
+    CorrProfile_Avg(:,3) = std(CorrProfile_All,0,2); % All S.D.
+    if ~isempty(CorrProfile_Valid)
+        CorrProfile_Avg(:,4) = mean(CorrProfile_Valid,2); % Valid
+        CorrProfile_Avg(:,5) = std(CorrProfile_Valid,0,2); % Valid S.D.
+    else
+        CorrProfile_Avg(:,4) = NaN;
+        CorrProfile_Avg(:,5) = NaN;
     end
     
 % Display .................................................................
@@ -441,15 +457,15 @@ while choice == 2
     colormap(gca, jet(256));
     colorbar(gca);
 
-    % Avg_Corr2D_AvgX (All & Valid)
+    % CorrProfile_AvgX (All & Valid)
     subplot(3,3,7)
-    plot(Corr2D_AvgX_Avg(:,1), Corr2D_AvgX_Avg(:,2))
+    plot(CorrProfile_Avg(:,1),CorrProfile_Avg(:,2))
     hold on
-    plot(Corr2D_AvgX_Avg(:,1), Corr2D_AvgX_Avg(:,4))
+    plot(CorrProfile_Avg(:,1),CorrProfile_Avg(:,4))
     xlabel('Distance (µm)') 
     ylabel('Correlation')
     legend('All','Valid')
-    xlim([0 ceil(max(Corr2D_AvgX_Avg(:,1)))])
+    xlim([0 ceil(max(CorrProfile_Avg(:,1)))])
     pbaspect([1 1 1])
     title('Avg. Corr2D')
 
@@ -458,7 +474,7 @@ while choice == 2
     histogram(PeaksInfo_All(:,4),50)
     xlabel('Distance (µm)') 
     ylabel('Number of peaks')
-    xlim([0 ceil(max(Corr2D_AvgX_Avg(:,1)))])
+    xlim([0 ceil(max(CorrProfile_Avg(:,1)))])
     pbaspect([1 1 1])
     title('Main peak localization (All)')
 
@@ -467,7 +483,7 @@ while choice == 2
     histogram(PeaksInfo_Valid(:,4),50)
     xlabel('Distance (µm)') 
     ylabel('Number of peaks')
-    xlim([0 ceil(max(Corr2D_AvgX_Avg(:,1)))])
+    xlim([0 ceil(max(CorrProfile_Avg(:,1)))])
     pbaspect([1 1 1])
     title('Main peak localization (Valid)')
 
@@ -528,7 +544,7 @@ Parameters = vertcat(...
     ROI_Size,ROI_Thresh,ROI_MinSize,ROI_MaxSize,...
     Tophat_Size,...
     Steerable_Order,Steerable_Sigma,...
-    Pad_Angle, ROI_Pad1, Pad_Corr, ROI_Pad_Corr,...
+    Pad_Angle, Pad_Corr, ROI_Pad_Corr,...
     min_Prom, min_Loc, max_Loc);
 
 Parameters = array2table(Parameters,'RowNames',...
@@ -536,14 +552,14 @@ Parameters = array2table(Parameters,'RowNames',...
     'ROI_Size','ROI_Thresh','ROI_MinSize','ROI_MaxSize',...
     'Tophat_Size',...
     'Steerable_Order','Steerable_Sigma',...
-    'Pad1', 'ROI_Pad1', 'Pad2', 'ROI_Pad2',...
+    'Pad_Angle', 'Pad_Corr', 'ROI_Pad_Corr',...
     'min_Prom', 'min_Loc', 'max_Loc'});
 
 PeaksInfo_All = array2table(PeaksInfo_All,'VariableNames',...
     {'GridY','GridX','pks','loc','width','prom'});
 PeaksInfo_Valid = array2table(PeaksInfo_Valid,'VariableNames',...
     {'GridY','GridX','pks','loc','width','prom'});
-Corr2D_AvgX_Avg = array2table(Corr2D_AvgX_Avg,'VariableNames',...
+CorrProfile_Avg = array2table(CorrProfile_Avg,'VariableNames',...
     {'Distance','All','Valid','AllSD','ValidSD'});
 
 % Clearvars ...............................................................
@@ -553,9 +569,9 @@ clearvars -except...
     Raw Raw_BGSub Raw_Mask Raw_ROIsMask Raw_Tophat...
     MergedData... 
     Parameters...
-    Corr2D_AvgX_All PeaksInfo_All...
-    Corr2D_AvgX_Valid PeaksInfo_Valid...
-    Corr2D_AvgX_Avg...
+    CorrProfile_All PeaksInfo_All...
+    CorrProfile_Valid PeaksInfo_Valid...
+    CorrProfile_Avg...
     Map_Prom Map_Valid
 
 % Save ....................................................................
