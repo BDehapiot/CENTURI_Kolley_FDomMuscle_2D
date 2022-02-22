@@ -10,34 +10,38 @@ clearvars
 
 RawName = '29H_IFM_Nano2SLS647_MHC488_Actin561_63x_3,4x_Zstack3-1_z9_RSize';
 RootPath = 'C:\Datas\3-GitHub_BDehapiot\PatScanMuscle_2D\data';
-pixSize = 0.0830266; % pixel size (µm)
-% pixSize = 0.0276060; % pixel size (µm)
-nChannel = 3; % select channel to process
+% pixSize = 0.0830266; % pixel size (µm)
+pixSize = 0.0276060; % pixel size (µm)
+nChannel = 1; % select channel to process
 
 %% Parameters 
+
+% Background subtraction
+GBlur_Sigma1 = 0; % Size for 1st gaussian blur (if 0 no BGSub)
+GBlur_Sigma2 = 2; % Size for 2nd gaussian blur (smoothening)
 
 % Mask  (obtained from BGSub)
 Mask_Thresh = 125; % lower threshold for Mask (A.U.)
 
 % ROIsMask (obtained from Mask)
-ROI_Size = 10; % ROIs size for ROIsMask (pixels)
+ROI_Size = 30; % ROIs size for ROIsMask (pixels)
 ROI_Thresh = 0.25; % lower threshold for ROIsMask (A.U.)
-ROI_MinSize = 100; % min size for ROIsMask's objects (pixels)
+ROI_MinSize = 10; % min size for ROIsMask's objects (pixels)
 ROI_MaxSize = 50000; % max size for ROIsMask's objects (pixels)
 
 % Tophat filtering
-Tophat_Size = 6; % disk size for tophat filtering (pixels)
+Tophat_Sigma = 12; % disk size for tophat filtering (pixels)
 
 % Steerable Filter
-Steerable_Order = 2; Steerable_Sigma = 2;
+Steerable_Sigma = 2; % Size for Steerable filter 
 
 % Padding
-Pad_Angle = 10; % Window size for angle measurement (nROIs)
-Pad_Corr = 5; % Window size for 2D corr. measurement (nROIs)
+Pad_Angle = 6; % Window size for angle measurement (nROIs)
+Pad_Corr = 3; % Window size for 2D corr. measurement (nROIs)
 ROI_Pad_Corr = (ROI_Size+(ROI_Size*(Pad_Corr-1))*2);
 
 % Valid peaks
-min_Prom = 0.10; % min prominence for pattern recognition
+min_Prom = 0.15; % min prominence for pattern recognition
 min_Loc = 0; max_Loc = 100; % min/max size for pattern recognition (µm)
     
 %% Initialize
@@ -73,8 +77,12 @@ while choice > 0
     nXCrop = size(Raw,2);
        
     % Substract background
-    Raw_BGSub = Raw-imgaussfilt(Raw,20); % Gaussian blur #1 
-    Raw_BGSub = imgaussfilt(Raw_BGSub,1); % Gaussian blur #2
+    if GBlur_Sigma1 ~= 0
+        Raw_BGSub = Raw-imgaussfilt(Raw,GBlur_Sigma1); % Gaussian blur #1 
+        Raw_BGSub = imgaussfilt(Raw_BGSub,GBlur_Sigma2); % Gaussian blur #2
+    else
+        Raw_BGSub = imgaussfilt(Raw,GBlur_Sigma2); % Gaussian blur #2
+    end
 
     % Create Mask
     Raw_Mask = Raw_BGSub;
@@ -105,9 +113,11 @@ while choice > 0
 
     % BGSub
     subplot(3,1,1) 
-    imshow(Raw,[qLow qHigh])
-    title('Raw')
-
+    imshow(Raw_BGSub,[qLow qHigh])
+    title(strcat(...
+        'BGSub (GBlur_Sigma1 =',{' '},num2str(GBlur_Sigma1),...
+        {' '},'GBlur_Sigma2 =',{' '},num2str(GBlur_Sigma2),{' '},'nROIs)'));
+    
     % Mask
     subplot(3,1,2) 
     imshow(Raw_Mask,[0 1])
@@ -140,6 +150,8 @@ while choice > 0
     if choice == 1
 
         prompt = {
+            'GBlur_Sigma1 :',...
+            'GBlur_Sigma2 :',...
             'Mask_Thresh :',...
             'ROI_Size :',...
             'ROI_Thresh :',...
@@ -148,6 +160,8 @@ while choice > 0
             };
 
         definput = {
+            num2str(GBlur_Sigma1),...
+            num2str(GBlur_Sigma2),....
             num2str(Mask_Thresh),...
             num2str(ROI_Size),....
             num2str(ROI_Thresh),...
@@ -157,12 +171,14 @@ while choice > 0
         
         dlgtitle = 'Input'; dims = 1;
         answer = str2double(inputdlg(prompt,dlgtitle,dims,definput));
-        
-        Mask_Thresh = answer(1,1); 
-        ROI_Size = answer(2,1); 
-        ROI_Thresh = answer(3,1); 
-        ROI_MinSize = answer(4,1); 
-        ROI_MaxSize = answer(5,1);
+
+        GBlur_Sigma1 = answer(1,1); 
+        GBlur_Sigma2 = answer(2,1);         
+        Mask_Thresh = answer(3,1); 
+        ROI_Size = answer(4,1); 
+        ROI_Thresh = answer(5,1); 
+        ROI_MinSize = answer(6,1); 
+        ROI_MaxSize = answer(7,1);
         
         close
     end
@@ -182,7 +198,7 @@ while choice > 0
 % Process .................................................................    
     
     % Tophat filtering
-    Raw_Tophat = imtophat(Raw,strel('disk',Tophat_Size));
+    Raw_Tophat = imtophat(Raw,strel('disk',Tophat_Sigma));
     
 % Display .................................................................
 
@@ -195,7 +211,7 @@ while choice > 0
     subplot(2,1,2) 
     imshow(Raw_Tophat,[qLow qHigh])
     title(strcat(...
-        'Tophat (size =',{' '},num2str(Tophat_Size),{' '},'pix.)'));
+        'Tophat (size =',{' '},num2str(Tophat_Sigma),{' '},'pix.)'));
     
     set(gcf, 'Units', 'Normalized', 'OuterPosition', [0 0 1 1]);
     
@@ -215,12 +231,12 @@ while choice > 0
         
         prompt = {'Tophat_Size :'};
         
-        definput = {num2str(Tophat_Size)};
+        definput = {num2str(Tophat_Sigma)};
         
         dlgtitle = 'Input'; dims = 1;
         answer = str2double(inputdlg(prompt,dlgtitle,dims,definput));
         
-        Tophat_Size = answer(1,1);
+        Tophat_Sigma = answer(1,1);
         
         close
     end
@@ -242,7 +258,7 @@ while choice > 0
     % Steerable Filter
     RawRSize = double(imresize(Raw,[nGridY nGridX],'nearest'));
     MaskRSize = double(imresize(Raw_Mask,[nGridY nGridX],'nearest'));
-    [res,~,~,rot] = steerableDetector(RawRSize,Steerable_Order,Steerable_Sigma,180);
+    [res,~,~,rot] = steerableDetector(RawRSize,2,Steerable_Sigma,180);
     for i=1:size(rot,3)
         temp = rot(:,:,i);
         temp(MaskRSize==0) = NaN;
@@ -540,18 +556,20 @@ end
 
 % Parameters
 Parameters = vertcat(...
+    GBlur_Sigma1,GBlur_Sigma2,...
     Mask_Thresh,...
     ROI_Size,ROI_Thresh,ROI_MinSize,ROI_MaxSize,...
-    Tophat_Size,...
-    Steerable_Order,Steerable_Sigma,...
+    Tophat_Sigma,...
+    Steerable_Sigma,...
     Pad_Angle, Pad_Corr, ROI_Pad_Corr,...
     min_Prom, min_Loc, max_Loc);
 
 Parameters = array2table(Parameters,'RowNames',...
-    {'Mask_Thresh',...
+    {'GBlur_Sigma1','GBlur_Sigma2',...
+    'Mask_Thresh',...
     'ROI_Size','ROI_Thresh','ROI_MinSize','ROI_MaxSize',...
     'Tophat_Size',...
-    'Steerable_Order','Steerable_Sigma',...
+    'Steerable_Sigma',...
     'Pad_Angle', 'Pad_Corr', 'ROI_Pad_Corr',...
     'min_Prom', 'min_Loc', 'max_Loc'});
 
@@ -560,7 +578,7 @@ PeaksInfo_All = array2table(PeaksInfo_All,'VariableNames',...
 PeaksInfo_Valid = array2table(PeaksInfo_Valid,'VariableNames',...
     {'GridY','GridX','pks','loc','width','prom'});
 CorrProfile_Avg = array2table(CorrProfile_Avg,'VariableNames',...
-    {'Distance','All','Valid','AllSD','ValidSD'});
+    {'Distance','All','AllSD','Valid','ValidSD'});
 
 % Clearvars ...............................................................
 
