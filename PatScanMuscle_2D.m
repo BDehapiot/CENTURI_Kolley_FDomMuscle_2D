@@ -8,11 +8,12 @@ clearvars
 
 %% Inputs
 
-RawName = '29H_IFM_Nano2SLS647_MHC488_Actin561_63x_3,4x_Zstack3-1_z9_RSize';
+RawName = '20220126_32hAPF_SqhGFP_phallo568_nano2647_Mhc405_100Xz2.5_AS_1_3_z19';
 RootPath = 'C:\Datas\3-GitHub_BDehapiot\PatScanMuscle_2D\data';
 % pixSize = 0.0830266; % pixel size (µm)
-pixSize = 0.0276060; % pixel size (µm)
-nChannel = 1; % select channel to process
+% pixSize = 0.0276060; % pixel size (µm)
+pixSize = 0.0332106; % pixel size (µm)
+nChannel = 4; % select channel to process
 
 %% Parameters 
 
@@ -21,16 +22,16 @@ GBlur_Sigma1 = 0; % Size for 1st gaussian blur (if 0 no BGSub)
 GBlur_Sigma2 = 2; % Size for 2nd gaussian blur (smoothening)
 
 % Mask  (obtained from BGSub)
-Mask_Thresh = 125; % lower threshold for Mask (A.U.)
+Mask_Thresh = 1000; % lower threshold for Mask (A.U.)
 
 % ROIsMask (obtained from Mask)
-ROI_Size = 30; % ROIs size for ROIsMask (pixels)
+ROI_Size = 20; % ROIs size for ROIsMask (pixels)
 ROI_Thresh = 0.25; % lower threshold for ROIsMask (A.U.)
 ROI_MinSize = 10; % min size for ROIsMask's objects (pixels)
 ROI_MaxSize = 50000; % max size for ROIsMask's objects (pixels)
 
 % Tophat filtering
-Tophat_Sigma = 12; % disk size for tophat filtering (pixels)
+Tophat_Sigma = 6; % disk size for tophat filtering (pixels)
 
 % Steerable Filter
 Steerable_Sigma = 2; % Size for Steerable filter 
