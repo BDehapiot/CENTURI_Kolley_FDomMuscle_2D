@@ -1,5 +1,5 @@
 clearvars
-%%% PatScanMuscle_2D
+%%% FDomMuscle_2D
 %%% Benoit Dehapiot, PhD
 %%% benoit.dehapiot@univ-amu.fr
 %%% CENTURI (Turing Center for Living Systems)
